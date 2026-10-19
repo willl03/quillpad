@@ -75,11 +75,19 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         val newDoc = root.createFile(mimeType, fileName)
             ?: throw IOException("Unable to create file $fileName")
 
-        val content = note.toStorableContent()
-        writeNoteToFile(newDoc, content)
+        try {
+            val content = note.toStorableContent()
+            writeNoteToFile(newDoc, content)
 
-        val resolved = resolveRelativePath(root, newDoc.name ?: fileName) ?: newDoc
-        getFile(resolved, newDoc.name ?: fileName)
+            val resolved = resolveRelativePath(root, newDoc.name ?: fileName) ?: newDoc
+            getFile(resolved, newDoc.name ?: fileName)
+        } catch (e: Exception) {
+            // Never leave an empty/partial file behind: the next scan would import it as a
+            // brand-new note and the user would see a duplicate.
+            runCatching { newDoc.delete() }
+                .onFailure { Log.w(TAG, "createNote: Unable to clean up ${newDoc.name}", it) }
+            throw e
+        }
     }
 
     override suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping = storageMutex.withLock {
