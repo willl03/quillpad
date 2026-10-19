@@ -35,6 +35,10 @@ fun SyncNote.updateLocalNote(localNote: Note) = localNote.copy(
     content = content ?: "",
     isPinned = favorite ?: localNote.isPinned,
     modifiedDate = lastModified.takeIf { it > 0 } ?: localNote.modifiedDate,
+    // Keep the editor mode in step with the actual file. Otherwise an externally renamed
+    // .txt file would be renamed back to .md on the next edit.
+    isMarkdownEnabled = fileExtension?.equals("md", ignoreCase = true)
+        ?: localNote.isMarkdownEnabled,
 )
 
 fun SyncNote.getMapping(noteId: Long, service: CloudService) = IdMapping(
