@@ -57,7 +57,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         get() {
             val titleToSet = title.ifBlank { "Untitled" }
             val ext = if (isMarkdownEnabled) "md" else "txt"
-            return "${sanitizeName(titleToSet)}.$ext"
+            return "${NoteFileNames.sanitize(titleToSet)}.$ext"
         }
 
     override suspend fun createNote(note: Note): SyncNote = storageMutex.withLock {
@@ -172,12 +172,12 @@ class StorageBackend(private val context: Context, private val config: StorageCo
             val name = child.name ?: continue
             when {
                 child.isDirectory -> {
-                    if (isIgnoredDirectoryName(name)) continue
+                    if (NoteFileNames.isIgnoredDirectory(name)) continue
                     val childPath = if (basePath.isEmpty()) name else "$basePath/$name"
                     walkNotes(child, childPath, out)
                 }
 
-                child.isFile && isNoteFileName(name) -> {
+                child.isFile && NoteFileNames.isNoteFile(name) -> {
                     val childPath = if (basePath.isEmpty()) name else "$basePath/$name"
                     out += child to childPath
                 }
@@ -195,11 +195,11 @@ class StorageBackend(private val context: Context, private val config: StorageCo
             id = 0,
             idStr = file.uri.toString(),
             content = content,
-            title = titleFromName(name),
+            title = NoteFileNames.titleFromName(name),
             lastModified = modified,
             relativePath = relativePath,
             contentHash = ContentHash.of(content),
-            fileExtension = name.substringAfterLast('.', "md"),
+            fileExtension = NoteFileNames.extension(name),
             size = file.length(),
         )
     }
@@ -361,29 +361,6 @@ class StorageBackend(private val context: Context, private val config: StorageCo
             if (candidate.lowercase() !in names) return candidate
             index++
         }
-    }
-
-    private fun sanitizeName(name: String): String {
-        val cleaned = name
-            .trim()
-            .replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]"), " ")
-            .trim()
-            .trimEnd('.')
-        return cleaned.ifBlank { "Untitled" }.take(150)
-    }
-
-    private fun titleFromName(name: String): String {
-        return if (name.contains('.')) name.substringBeforeLast('.') else name
-    }
-
-    private fun isNoteFileName(name: String): Boolean {
-        if (name.startsWith(".")) return false
-        if (name.contains("sync-conflict", ignoreCase = true)) return false
-        return name.endsWith(".md", ignoreCase = true) || name.endsWith(".txt", ignoreCase = true)
-    }
-
-    private fun isIgnoredDirectoryName(name: String): Boolean {
-        return name.startsWith(".") || name.contains("sync-conflict", ignoreCase = true)
     }
 
     private fun normalizePath(path: String): String {
