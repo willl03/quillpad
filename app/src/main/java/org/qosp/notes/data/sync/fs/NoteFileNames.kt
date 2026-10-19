@@ -11,6 +11,9 @@ object NoteFileNames {
 
     const val FALLBACK = "Untitled"
 
+    /** Leave room for the extension and a collision suffix under the common 255-byte limit. */
+    private const val MAX_FILENAME_BYTES = 180
+
     private val invalidCharacters = Regex("[\\\\/:*?\"<>|\\u0000-\\u001F]")
     private val syncConflictMarker = Regex("sync-conflict", RegexOption.IGNORE_CASE)
 
@@ -23,7 +26,25 @@ object NoteFileNames {
             .trimStart('.')
             .trimEnd('.')
 
-        return cleaned.ifBlank { FALLBACK }
+        return truncateUtf8(cleaned.ifBlank { FALLBACK }, MAX_FILENAME_BYTES)
+    }
+
+    private fun truncateUtf8(value: String, maxBytes: Int): String {
+        if (value.toByteArray(Charsets.UTF_8).size <= maxBytes) return value
+
+        val result = StringBuilder(value.length)
+        var bytes = 0
+        var index = 0
+        while (index < value.length) {
+            val codePoint = value.codePointAt(index)
+            val chars = String(Character.toChars(codePoint))
+            val size = chars.toByteArray(Charsets.UTF_8).size
+            if (bytes + size > maxBytes) break
+            result.append(chars)
+            bytes += size
+            index += Character.charCount(codePoint)
+        }
+        return result.toString().ifBlank { FALLBACK }
     }
 
     fun isNoteFile(name: String): Boolean {

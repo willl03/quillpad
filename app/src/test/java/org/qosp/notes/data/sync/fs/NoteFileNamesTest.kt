@@ -52,6 +52,17 @@ class NoteFileNamesTest {
     }
 
     @Test
+    fun `long filenames are truncated by utf-8 bytes without splitting emoji`() {
+        val accented = NoteFileNames.sanitize("é".repeat(200))
+        assertEquals(90, accented.length)
+        assertEquals(180, accented.toByteArray(Charsets.UTF_8).size)
+
+        val emoji = NoteFileNames.sanitize("😀".repeat(100))
+        assertEquals("😀".repeat(45), emoji)
+        assertEquals(180, emoji.toByteArray(Charsets.UTF_8).size)
+    }
+
+    @Test
     fun `saf document ids are decoded to a filename`() {
         assertEquals(
             "foo.md",
