@@ -50,4 +50,29 @@ class NoteFileNamesTest {
         assertEquals("foo.bar", NoteFileNames.titleFromName("foo.bar.md"))
         assertEquals("MD", NoteFileNames.extension("foo.MD"))
     }
+
+    @Test
+    fun `saf document ids are decoded to a filename`() {
+        assertEquals(
+            "foo.md",
+            NoteFileNames.fileNameFromUri("content://p/document/primary%3ANotes%2Ffoo.md"),
+        )
+        assertEquals(
+            "foo.md",
+            NoteFileNames.fileNameFromUri("content://p/document/primary%3Afoo.md"),
+        )
+        assertEquals(
+            "foo bar.md",
+            NoteFileNames.fileNameFromUri("content://p/document/primary%3ANotes%2Ffoo%20bar.md"),
+        )
+        assertEquals(
+            "café.md",
+            NoteFileNames.fileNameFromUri("content://p/document/primary%3ANotes%2Fcaf%C3%A9.md"),
+        )
+    }
+
+    @Test
+    fun `paths use forward slashes and no leading or trailing separators`() {
+        assertEquals("a/b/c", NoteFileNames.normalizePath("/a\\b/c/"))
+    }
 }

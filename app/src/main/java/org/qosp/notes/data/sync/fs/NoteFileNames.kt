@@ -41,4 +41,19 @@ object NoteFileNames {
     }
 
     fun extension(name: String): String = name.substringAfterLast('.', "md")
+
+    fun normalizePath(path: String): String = path.replace('\\', '/').trim('/')
+
+    /**
+     * Extracts a display filename from a SAF URI. Document ids encode path separators and
+     * non-ASCII characters, so decode them first. Kept free of android.net.Uri so the
+     * reconciler remains unit-testable on the JVM.
+     */
+    fun fileNameFromUri(uri: String?): String? {
+        if (uri.isNullOrBlank()) return null
+        val decoded = runCatching {
+            java.net.URLDecoder.decode(uri.replace("+", "%2B"), Charsets.UTF_8.name())
+        }.getOrDefault(uri)
+        return decoded.substringAfterLast('/').substringAfterLast(':').takeIf { it.isNotBlank() }
+    }
 }

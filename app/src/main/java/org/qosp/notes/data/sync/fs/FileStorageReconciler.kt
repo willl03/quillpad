@@ -8,6 +8,7 @@ import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.data.sync.toLocalNote
 import org.qosp.notes.preferences.CloudService
+import java.util.Locale
 
 /**
  * Reconciles the app's notes against the selected storage folder.
@@ -61,16 +62,16 @@ class FileStorageReconciler {
         val filesByUri = files.associateBy { it.idStr }
         val filesByPath = files
             .filter { !it.relativePath.isNullOrBlank() }
-            .groupBy { normalizePath(it.relativePath!!) }
+            .groupBy { NoteFileNames.normalizePath(it.relativePath!!) }
         val filesByPathLower = files
             .filter { !it.relativePath.isNullOrBlank() }
-            .groupBy { normalizePath(it.relativePath!!).lowercase() }
+            .groupBy { NoteFileNames.normalizePath(it.relativePath!!).lowercase(Locale.ROOT) }
         val filesByHash = files
             .filter { !it.contentHash.isNullOrEmpty() }
             .groupBy { it.contentHash!! }
-        val filesByTitle = files.groupBy { it.title.trim().lowercase() }
+        val filesByTitle = files.groupBy { it.title.trim().lowercase(Locale.ROOT) }
         val filesByFileName = files.groupBy {
-            it.relativePath?.substringAfterLast('/')?.lowercase().orEmpty()
+            it.relativePath?.substringAfterLast('/')?.lowercase(Locale.ROOT).orEmpty()
         }
 
         val claimedFileIds = mutableSetOf<String>()
@@ -310,8 +311,8 @@ class FileStorageReconciler {
             if (byHash.size == 1) return byHash.first()
         }
 
-        val title = file.title.trim().lowercase()
-        val byTitle = candidates.filter { it.title.trim().lowercase() == title }
+        val title = file.title.trim().lowercase(Locale.ROOT)
+        val byTitle = candidates.filter { it.title.trim().lowercase(Locale.ROOT) == title }
         if (byTitle.size == 1) return byTitle.first()
 
         return null
@@ -335,9 +336,9 @@ class FileStorageReconciler {
         }
 
         val pathMatch = mapping.relativePath?.let { path ->
-            val normalized = normalizePath(path)
+            val normalized = NoteFileNames.normalizePath(path)
             select(filesByPath[normalized], claimedFileIds)
-                ?: select(filesByPathLower[normalized.lowercase()], claimedFileIds)
+                ?: select(filesByPathLower[normalized.lowercase(Locale.ROOT)], claimedFileIds)
         }
 
         val hashMatch = mapping.contentHash?.let { hash ->
@@ -355,12 +356,12 @@ class FileStorageReconciler {
         if (pathMatch != null) return pathMatch
         if (hashMatch != null) return hashMatch
 
-        val title = local?.title?.trim()?.lowercase()
+        val title = local?.title?.trim()?.lowercase(Locale.ROOT)
         if (!title.isNullOrEmpty()) {
             select(filesByTitle[title], claimedFileIds)?.let { return it }
         }
 
-        val fileName = fileNameFromUri(mapping.storageUri)?.lowercase()
+        val fileName = NoteFileNames.fileNameFromUri(mapping.storageUri)?.lowercase(Locale.ROOT)
         if (!fileName.isNullOrEmpty()) {
             select(filesByFileName[fileName], claimedFileIds)?.let { return it }
         }
@@ -380,20 +381,6 @@ class FileStorageReconciler {
 
     private fun fileHash(file: SyncNote): String =
         file.contentHash ?: ContentHash.of(file.content ?: "")
-
-    private fun fileNameFromUri(uri: String?): String? {
-        if (uri.isNullOrBlank()) return null
-        // Avoid android.net.Uri here so the reconciler stays unit-testable on the JVM.
-        // SAF document IDs encode the path separator as %2F; that is all we need for a
-        // filename fallback.
-        val decoded = uri
-            .replace("%2F", "/", ignoreCase = true)
-            .replace("%20", " ", ignoreCase = true)
-        return decoded.substringAfterLast('/').substringAfterLast(':').takeIf { it.isNotBlank() }
-    }
-
-    private fun normalizePath(path: String): String =
-        path.replace('\\', '/').trim('/')
 
     private sealed interface FileMatch {
         data class Found(val file: SyncNote) : FileMatch

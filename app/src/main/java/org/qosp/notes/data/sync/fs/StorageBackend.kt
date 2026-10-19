@@ -20,6 +20,7 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.time.Instant
+import java.util.Locale
 import kotlin.time.measureTimedValue
 
 class StorageBackend(private val context: Context, private val config: StorageConfig) : ISyncBackend {
@@ -267,7 +268,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     private fun resolveMapping(root: DocumentFile, mapping: IdMapping): Resolution {
         val baseHash = mapping.contentHash
         val lastPath = mapping.relativePath
-        val lastFileName = lastPath?.substringAfterLast('/') ?: fileNameFromUri(mapping.storageUri)
+        val lastFileName = lastPath?.substringAfterLast('/') ?: NoteFileNames.fileNameFromUri(mapping.storageUri)
 
         val direct = mapping.storageUri?.toUri()?.let { uri ->
             DocumentFile.fromSingleUri(context, uri)
@@ -277,7 +278,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
 
         val atLastPath = lastPath?.let { path ->
             resolveRelativePath(root, path)?.let { file ->
-                readCandidate(file, normalizePath(path))
+                readCandidate(file, NoteFileNames.normalizePath(path))
             }
         }
 
@@ -351,7 +352,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     }
 
     private fun resolveRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {
-        val normalized = normalizePath(relativePath)
+        val normalized = NoteFileNames.normalizePath(relativePath)
         if (normalized.isEmpty()) return null
 
         var current: DocumentFile = root
@@ -366,7 +367,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     }
 
     private fun resolveDirectory(root: DocumentFile, relativePath: String): DocumentFile? {
-        val normalized = normalizePath(relativePath)
+        val normalized = NoteFileNames.normalizePath(relativePath)
         if (normalized.isEmpty()) return root
 
         var current: DocumentFile = root
@@ -385,7 +386,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         currentPath: String,
         newName: String,
     ): ResolvedFile? {
-        val parentPath = normalizePath(currentPath).substringBeforeLast('/', "")
+        val parentPath = NoteFileNames.normalizePath(currentPath).substringBeforeLast('/', "")
         val parent = resolveDirectory(root, parentPath) ?: return null
         val targetName = uniqueName(parent, newName, currentName = file.name)
 
@@ -430,10 +431,10 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     private fun uniqueName(parent: DocumentFile, requestedName: String, currentName: String?): String {
         val names = parent.listFiles()
             .filter { currentName == null || !it.name.equals(currentName, ignoreCase = true) }
-            .mapNotNull { it.name?.lowercase() }
+            .mapNotNull { it.name?.lowercase(Locale.ROOT) }
             .toMutableSet()
 
-        if (requestedName.lowercase() !in names) return requestedName
+        if (requestedName.lowercase(Locale.ROOT) !in names) return requestedName
 
         val base = requestedName.substringBeforeLast('.', requestedName)
         val extension = requestedName.substringAfterLast('.', "")
@@ -442,19 +443,9 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         var index = 2
         while (true) {
             val candidate = "$base $index$suffix"
-            if (candidate.lowercase() !in names) return candidate
+            if (candidate.lowercase(Locale.ROOT) !in names) return candidate
             index++
         }
-    }
-
-    private fun normalizePath(path: String): String {
-        return path.replace('\\', '/').trim('/')
-    }
-
-    private fun fileNameFromUri(uri: String?): String? {
-        if (uri.isNullOrBlank()) return null
-        val path = Uri.decode(uri)
-        return path.substringAfterLast('/').substringAfterLast(':').takeIf { it.isNotBlank() }
     }
 
     private inline fun <reified T> inStorage(block: () -> T): T? {
