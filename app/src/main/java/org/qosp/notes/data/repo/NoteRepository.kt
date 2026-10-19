@@ -17,7 +17,7 @@ interface NoteRepository {
     suspend fun discardEmptyNotes(): Boolean
     suspend fun permanentlyDeleteNotesInBin()
 
-    suspend fun syncNotes(): BaseResult
+    suspend fun syncNotes(forceDeletions: Boolean = false): BaseResult
     fun getById(noteId: Long): Flow<Note?>
     fun getDeleted(sortMethod: SortMethod = defaultOf()): Flow<List<Note>>
     fun getArchived(sortMethod: SortMethod = defaultOf()): Flow<List<Note>>

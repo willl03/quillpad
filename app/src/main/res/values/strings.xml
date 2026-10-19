@@ -129,6 +129,10 @@
     <string name="sync_file_storage_ambiguous">Unable to identify the note\'s file; it will be reconciled on the next sync</string>
     <string name="preferences_file_storage_location">Storage location</string>
     <string name="preferences_file_storage_select">Select Storage location</string>
+    <string name="preferences_file_storage_rescan">Rescan folder</string>
+    <string name="preferences_file_storage_rescan_subtext">Apply changes and deletions from the folder now</string>
+    <string name="preferences_file_storage_rescan_title">Rescan storage folder?</string>
+    <string name="preferences_file_storage_rescan_message">This applies the folder\'s current contents, including removing notes whose files are missing. If the folder is empty or unavailable, this can remove all local notes.</string>
     <string name="preferences_sync_on_wifi">Wi-Fi</string>
     <string name="preferences_sync_on_wifi_data">Wi-Fi or Data</string>
     <string name="preferences_sync_when_on">Sync when on</string>

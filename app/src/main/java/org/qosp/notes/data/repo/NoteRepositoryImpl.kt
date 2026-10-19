@@ -62,7 +62,7 @@ class NoteRepositoryImpl(
         idMappingDao.setNotesToBeDeleted(*n.map { it.id }.toLongArray())
     }
 
-    override suspend fun syncNotes(): BaseResult {
+    override suspend fun syncNotes(forceDeletions: Boolean): BaseResult {
         Log.d(tag, "syncNotes: Starting synchronization")
 
         val syncProvider = backendProvider.syncProvider.value
@@ -93,7 +93,7 @@ class NoteRepositoryImpl(
                     syncProvider.getAll() ?: return@withLock GenericError("Failed to fetch remote notes")
 
                 if (syncProvider.type == CloudService.FILE_STORAGE) {
-                    if (!syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider)) {
+                    if (!syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider, forceDeletions)) {
                         return@withLock GenericError(context.getString(R.string.sync_file_storage_empty))
                     }
                 } else {
@@ -117,12 +117,14 @@ class NoteRepositoryImpl(
         allLocalNotes: List<Note>,
         files: List<SyncNote>,
         syncProvider: ISyncBackend,
+        forceDeletions: Boolean,
     ): Boolean {
         val mappingCount = idMappingDao.getCountByCloudService(CloudService.FILE_STORAGE)
 
         // An empty listing is much more likely to be an unmounted SD card / lost permission
-        // than the user deleting every file. Never wipe the local index in that case.
-        if (files.isEmpty() && mappingCount > 0) {
+        // than the user deleting every file. Never wipe the local index in that case unless
+        // the user explicitly confirmed a forced rescan.
+        if (!forceDeletions && files.isEmpty() && mappingCount > 0) {
             Log.w(tag, "syncFileStorage: ${context.getString(R.string.sync_file_storage_empty)}")
             toaster.showLong(R.string.sync_file_storage_empty)
             return false

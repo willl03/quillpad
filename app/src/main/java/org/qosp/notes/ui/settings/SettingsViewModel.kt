@@ -46,6 +46,11 @@ class SettingsViewModel(
     fun setEncryptedString(key: String, value: String) =
         viewModelScope.launch { preferenceRepository.putEncryptedStrings(key to value) }
 
+    /** Applies the folder's current contents even when the listing looks empty. */
+    fun rescanStorage() = viewModelScope.launch(Dispatchers.IO) {
+        noteRepository.syncNotes(forceDeletions = true)
+    }
+
     fun clearNextcloudCredentials() = viewModelScope.launch {
         preferenceRepository.putEncryptedStrings(
             PreferenceRepository.NEXTCLOUD_INSTANCE_URL to "",

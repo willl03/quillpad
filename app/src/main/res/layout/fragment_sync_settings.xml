@@ -147,6 +147,14 @@
                         app:subText="@string/preferences_file_storage_location"
                         app:text="@string/preferences_file_storage_select"/>
 
+                    <org.qosp.notes.ui.utils.views.PreferenceView
+                        android:id="@+id/setting_storage_rescan"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:iconSrc="@drawable/ic_sync"
+                        app:subText="@string/preferences_file_storage_rescan_subtext"
+                        app:text="@string/preferences_file_storage_rescan"/>
+
                 </LinearLayout>
             </LinearLayout>
         </ScrollView>

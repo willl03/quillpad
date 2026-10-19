@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.View
 import androidx.appcompat.widget.Toolbar
 import androidx.core.net.toUri
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import org.qosp.notes.R
 import org.qosp.notes.data.sync.fs.toFriendlyString
@@ -77,6 +78,7 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
         setupTrustCertificatesListener()
 
         setupLocalLocationListener()
+        setupStorageRescanListener()
     }
 
     private fun View.show(visible: Boolean) = if (visible) visibility = View.VISIBLE else visibility = View.GONE
@@ -126,6 +128,15 @@ class SyncSettingsFragment : BaseFragment(R.layout.fragment_sync_settings) {
 
     private fun setupLocalLocationListener() = binding.settingStorageLocation.setOnClickListener {
         locationListener.launch(storageLocation)
+    }
+
+    private fun setupStorageRescanListener() = binding.settingStorageRescan.setOnClickListener {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.preferences_file_storage_rescan_title)
+            .setMessage(R.string.preferences_file_storage_rescan_message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> model.rescanStorage() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun setupNextcloudServerListener() = binding.settingNextcloudServer.setOnClickListener {
