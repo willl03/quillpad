@@ -21,6 +21,10 @@ class FileStorageReconciler {
 
     private val tag = "FileStorageReconciler"
 
+    private val mappingPreference = compareByDescending<IdMapping> { it.contentHash != null }
+        .thenByDescending { it.lastSyncedModified ?: 0L }
+        .thenByDescending { it.mappingId }
+
     data class Result(
         val imports: List<NoteAction.Create> = emptyList(),
         val localUpdates: List<NoteAction.Update> = emptyList(),
@@ -70,8 +74,15 @@ class FileStorageReconciler {
         val claimedFileIds = mutableSetOf<String>()
         val claimedLocalIds = mutableSetOf<Long>()
 
-        // 1. Existing mappings, including mappings for notes that are in the bin.
-        for (mapping in mappings) {
+        // 1. Existing mappings, including mappings for notes that are in the bin. The unique
+        // index should prevent duplicates, but guard against legacy data as well: processing
+        // two mappings for one note can make one "find" the file and the other "lose" it,
+        // which would delete a note that still has its file.
+        val uniqueMappings = mappings
+            .groupBy { it.localNoteId }
+            .mapNotNull { (_, group) -> group.maxWithOrNull(mappingPreference) }
+
+        for (mapping in uniqueMappings) {
             val local = localById[mapping.localNoteId]
 
             val match = resolveFile(

@@ -248,6 +248,27 @@ class FileStorageReconcilerTest {
     }
 
     @Test
+    fun `duplicate mappings do not delete a note whose file exists`() {
+        val f = file("note.md", "Content")
+        val matching = oldMapping(noteId = 1L, uri = f.idStr, path = "note.md", hash = f.contentHash!!)
+        val stale = oldMapping(
+            noteId = 1L,
+            uri = "content://old/stale.md",
+            path = "stale.md",
+            hash = ContentHash.of("Different content"),
+        )
+
+        val result = reconciler(
+            localNotes = listOf(note(1L, "note", "Content")),
+            files = listOf(f),
+            mappings = listOf(matching, stale),
+        )
+
+        assertTrue(result.removedLocalNotes.isEmpty())
+        assertTrue(result.keptLocalNotes.isEmpty())
+    }
+
+    @Test
     fun `ambiguous hash match does not delete the local note`() {
         val a = file("a.md", "Same")
         val b = file("b.md", "Same")

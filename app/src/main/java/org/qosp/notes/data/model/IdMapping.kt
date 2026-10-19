@@ -13,7 +13,7 @@ import org.qosp.notes.preferences.CloudService
 @Entity(
     tableName = "cloud_ids",
     indices = [Index(value = ["localNoteId"], name = "cloud_ids_id_index"),
-        Index(value = ["localNoteId", "provider"], name = "cloud_ids_id_provider_index")],
+        Index(value = ["localNoteId", "provider"], name = "cloud_ids_id_provider_index", unique = true)],
 )
 data class IdMapping(
     @PrimaryKey(autoGenerate = true)

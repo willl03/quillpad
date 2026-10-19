@@ -27,7 +27,7 @@ import org.qosp.notes.data.model.Tag
         Reminder::class,
         IdMapping::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -80,6 +80,31 @@ abstract class AppDatabase : RoomDatabase() {
                     execSQL("ALTER TABLE cloud_ids ADD COLUMN relativePath TEXT")
                     execSQL("ALTER TABLE cloud_ids ADD COLUMN contentHash TEXT")
                     execSQL("ALTER TABLE cloud_ids ADD COLUMN lastSyncedModified INTEGER")
+                }
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.apply {
+                    // Keep the most useful mapping per note/provider, then enforce uniqueness.
+                    execSQL(
+                        """
+                        DELETE FROM cloud_ids
+                        WHERE provider IS NOT NULL
+                          AND mappingId NOT IN (
+                            SELECT mappingId FROM cloud_ids AS candidate
+                            WHERE candidate.localNoteId = cloud_ids.localNoteId
+                              AND candidate.provider = cloud_ids.provider
+                            ORDER BY (candidate.contentHash IS NOT NULL) DESC,
+                                     COALESCE(candidate.lastSyncedModified, 0) DESC,
+                                     candidate.mappingId DESC
+                            LIMIT 1
+                          )
+                        """.trimIndent()
+                    )
+                    execSQL("DROP INDEX IF EXISTS cloud_ids_id_provider_index")
+                    execSQL("CREATE UNIQUE INDEX IF NOT EXISTS cloud_ids_id_provider_index ON cloud_ids (localNoteId, provider)")
                 }
             }
         }
