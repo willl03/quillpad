@@ -164,14 +164,16 @@ class FileStorageReconciler {
 
         // 2. Files without a mapping. First try to re-link an existing local note (this is
         // also the adoption path when the database was recreated), then import.
-        val unmappedLocals = localNotes.filter { it.id !in claimedLocalIds }
+        val availableLocals = localNotes
+            .filter { it.id !in claimedLocalIds }
+            .toMutableList()
 
         for (file in files) {
             if (file.idStr in claimedFileIds) continue
 
             val candidate = findUnmappedLocal(
                 file = file,
-                candidates = unmappedLocals.filter { it.id !in claimedLocalIds },
+                candidates = availableLocals,
                 localHashes = localHashes,
             )
 
@@ -181,7 +183,7 @@ class FileStorageReconciler {
                 continue
             }
 
-            claimedLocalIds += candidate.id
+            availableLocals.remove(candidate)
             val fileHash = fileHash(file)
             val localHash = localHashes.getValue(candidate.id)
             var mapping = file.getMapping(candidate.id, CloudService.FILE_STORAGE)
@@ -211,9 +213,7 @@ class FileStorageReconciler {
         // interrupted (process death, backend unavailable) and was therefore never written.
         // Notes kept because their file disappeared are marked local-only by the repository,
         // so they are excluded here; externally deleted notes are removed entirely.
-        result.pendingUploads += localNotes.filter {
-            it.id !in claimedLocalIds && !it.isLocalOnly
-        }
+        result.pendingUploads += availableLocals.filter { !it.isLocalOnly }
 
         return result.build()
     }
