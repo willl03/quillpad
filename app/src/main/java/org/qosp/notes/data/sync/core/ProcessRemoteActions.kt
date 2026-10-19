@@ -12,6 +12,7 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.RemoteOperation.Create
 import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
+import org.qosp.notes.data.sync.fs.AmbiguousFileException
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.di.SyncScope
 import org.qosp.notes.preferences.CloudService
@@ -142,6 +143,9 @@ class ProcessRemoteActions(
             val updatedMapping = syncProvider.updateNote(note, it)
             idMappingDao.update(updatedMapping)
         }
+    } catch (e: AmbiguousFileException) {
+        Log.w(tag, "processRemoteOperation: Ambiguous note file; leaving it for reconciliation: ${e.message}")
+        toaster.showShort("Unable to identify the note's file; it will be reconciled on the next sync")
     } catch (e: FileNotFoundException) {
         // The file was moved or deleted outside the app. The next sync will either follow it
         // or keep the local edit; never recreate it here.

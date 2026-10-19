@@ -25,6 +25,13 @@ import kotlin.time.measureTimedValue
 class StorageBackend(private val context: Context, private val config: StorageConfig) : ISyncBackend {
 
     private data class ResolvedFile(val file: DocumentFile, val relativePath: String)
+    private data class Candidate(val resolved: ResolvedFile, val syncNote: SyncNote?)
+
+    private sealed interface Resolution {
+        data class Found(val file: ResolvedFile) : Resolution
+        data object NotFound : Resolution
+        data object Ambiguous : Resolution
+    }
 
     companion object {
         private const val TAG = "StorageBackend"
@@ -77,8 +84,15 @@ class StorageBackend(private val context: Context, private val config: StorageCo
 
     override suspend fun updateNote(note: Note, mapping: IdMapping): IdMapping = storageMutex.withLock {
         val root = getRootDocumentFile() ?: throw IOException("Unable to access storage location")
-        val resolved = resolveMapping(root, mapping)
-            ?: throw FileNotFoundException("Note file no longer exists: ${mapping.relativePath ?: mapping.storageUri}")
+        val resolved = when (val resolution = resolveMapping(root, mapping)) {
+            is Resolution.Found -> resolution.file
+            Resolution.Ambiguous -> throw AmbiguousFileException(
+                "Unable to identify the note file for ${mapping.relativePath ?: mapping.storageUri}"
+            )
+            Resolution.NotFound -> throw FileNotFoundException(
+                "Note file no longer exists: ${mapping.relativePath ?: mapping.storageUri}"
+            )
+        }
 
         val content = note.toStorableContent()
         writeNoteToFile(resolved.file, content)
@@ -106,7 +120,13 @@ class StorageBackend(private val context: Context, private val config: StorageCo
 
     override suspend fun deleteNote(mapping: IdMapping): Boolean = storageMutex.withLock {
         val root = getRootDocumentFile() ?: return@withLock false
-        val resolved = resolveMapping(root, mapping) ?: return@withLock true
+        val resolved = when (val resolution = resolveMapping(root, mapping)) {
+            is Resolution.Found -> resolution.file
+            // Never delete a file we cannot identify with certainty; the caller keeps the
+            // mapping and the next sync can retry.
+            Resolution.Ambiguous -> return@withLock false
+            Resolution.NotFound -> return@withLock true
+        }
 
         val result = inStorage {
             DocumentsContract.deleteDocument(context.contentResolver, resolved.file.uri)
@@ -119,7 +139,10 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     override suspend fun getNote(mapping: IdMapping): SyncNote? = storageMutex.withLock {
         try {
             val root = getRootDocumentFile() ?: return@withLock null
-            val resolved = resolveMapping(root, mapping) ?: return@withLock null
+            val resolved = when (val resolution = resolveMapping(root, mapping)) {
+                is Resolution.Found -> resolution.file
+                else -> return@withLock null
+            }
             getFile(resolved.file, resolved.relativePath)
         } catch (e: Exception) {
             Log.e(TAG, "getNote: Error getting note with id ${mapping.localNoteId}", e)
@@ -224,51 +247,96 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     /**
      * Finds the current document for [mapping].
      *
-     * SAF document URIs embed the path, so they change when a file is moved or renamed by
-     * another app. Try the last known URI, then the relative path, then the content hash and
-     * finally the filename. Returns null when the file really is gone.
+     * SAF URIs embed the path, so they change when a file is moved or renamed elsewhere. The
+     * last-synced content is the strongest identity: prefer a unique file with that content
+     * over the remembered path, because the old path may have been reused by a different
+     * note. If the candidates disagree and we cannot identify the file, return Ambiguous so
+     * callers do not overwrite or delete the wrong document.
      */
-    private fun resolveMapping(root: DocumentFile, mapping: IdMapping): ResolvedFile? {
-        val uri = mapping.storageUri?.toUri()
-        if (uri != null) {
-            val direct = DocumentFile.fromSingleUri(context, uri)
-            if (direct != null && direct.exists() && direct.isFile) {
-                val path = mapping.relativePath ?: findPathByUri(root, uri) ?: direct.name.orEmpty()
-                return ResolvedFile(direct, path)
+    private fun resolveMapping(root: DocumentFile, mapping: IdMapping): Resolution {
+        val baseHash = mapping.contentHash
+        val lastPath = mapping.relativePath
+        val lastFileName = lastPath?.substringAfterLast('/') ?: fileNameFromUri(mapping.storageUri)
+
+        val direct = mapping.storageUri?.toUri()?.let { uri ->
+            DocumentFile.fromSingleUri(context, uri)
+                ?.takeIf { it.exists() && it.isFile }
+                ?.let { file -> readCandidate(file, lastPath ?: file.name.orEmpty()) }
+        }
+
+        val atLastPath = lastPath?.let { path ->
+            resolveRelativePath(root, path)?.let { file ->
+                readCandidate(file, normalizePath(path))
             }
         }
 
-        mapping.relativePath?.let { path ->
-            resolveRelativePath(root, path)?.let { return ResolvedFile(it, normalizePath(path)) }
+        // Legacy mappings have no merge base yet: trust the remembered location.
+        if (baseHash == null) {
+            direct?.let { return Resolution.Found(it.resolved) }
+            atLastPath?.let { return Resolution.Found(it.resolved) }
+            return findByFileName(root, lastFileName)
         }
 
-        mapping.contentHash?.let { hash ->
-            val matches = runCatching { listNotes(root) }.getOrElse { emptyList() }
-                .filter { it.contentHash == hash }
-            if (matches.size == 1) {
-                val match = matches.first()
-                val file = DocumentFile.fromSingleUri(context, match.idStr.toUri())
-                if (file != null && file.exists()) {
-                    return ResolvedFile(file, match.relativePath ?: "")
-                }
+        // The file still has the content it had at the last sync: this is the note.
+        direct?.takeIf { it.syncNote?.contentHash == baseHash }?.let {
+            return Resolution.Found(it.resolved)
+        }
+        atLastPath?.takeIf { it.syncNote?.contentHash == baseHash }?.let {
+            return Resolution.Found(it.resolved)
+        }
+
+        // The content is no longer at the remembered location. Look for it elsewhere first;
+        // this catches a move plus a different file taking over the old path.
+        val allNotes = runCatching { listNotes(root) }.getOrNull()
+        if (allNotes != null) {
+            val matches = allNotes.filter { it.contentHash == baseHash }
+            when {
+                matches.size == 1 -> return foundNote(matches.first())
+                matches.size > 1 -> return Resolution.Ambiguous
             }
         }
 
-        val fileName = fileNameFromUri(mapping.storageUri)
-        if (!fileName.isNullOrEmpty()) {
-            val matches = mutableListOf<Pair<DocumentFile, String>>()
-            walkNotes(root, "", matches)
-            val match = matches.filter { it.first.name.equals(fileName, ignoreCase = true) }
-            if (match.size == 1) return ResolvedFile(match.first().first, match.first().second)
+        // No moved file. A readable candidate at the old location is probably an edit in
+        // place, but only trust it while the filename still matches the last known name.
+        val localCandidate = atLastPath ?: direct
+        if (localCandidate != null) {
+            if (localCandidate.syncNote == null) return Resolution.Ambiguous
+            val name = localCandidate.resolved.file.name
+            if (lastFileName.isNullOrBlank() || name.equals(lastFileName, ignoreCase = true)) {
+                return Resolution.Found(localCandidate.resolved)
+            }
+            return Resolution.Ambiguous
         }
 
-        return null
+        return findByFileName(root, lastFileName)
     }
 
-    private fun findPathByUri(root: DocumentFile, uri: Uri): String? {
-        val matches = mutableListOf<Pair<DocumentFile, String>>()
-        walkNotes(root, "", matches)
-        return matches.firstOrNull { it.first.uri == uri }?.second
+    private fun readCandidate(file: DocumentFile, relativePath: String): Candidate {
+        return Candidate(
+            resolved = ResolvedFile(file, relativePath),
+            syncNote = runCatching { getFile(file, relativePath) }.getOrNull(),
+        )
+    }
+
+    private fun foundNote(note: SyncNote): Resolution {
+        val file = DocumentFile.fromSingleUri(context, note.idStr.toUri())
+            ?: return Resolution.Ambiguous
+        if (!file.exists() || !file.isFile) return Resolution.Ambiguous
+        return Resolution.Found(ResolvedFile(file, note.relativePath.orEmpty()))
+    }
+
+    private fun findByFileName(root: DocumentFile, fileName: String?): Resolution {
+        if (fileName.isNullOrBlank()) return Resolution.NotFound
+        val allNotes = runCatching { listNotes(root) }.getOrNull()
+            ?: return Resolution.Ambiguous
+        val matches = allNotes.filter {
+            it.relativePath?.substringAfterLast('/')?.equals(fileName, ignoreCase = true) == true
+        }
+        return when (matches.size) {
+            0 -> Resolution.NotFound
+            1 -> foundNote(matches.first())
+            else -> Resolution.Ambiguous
+        }
     }
 
     private fun resolveRelativePath(root: DocumentFile, relativePath: String): DocumentFile? {
@@ -386,3 +454,6 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         }
     }
 }
+
+/** The file exists, but the app cannot prove which document the mapping belongs to. */
+class AmbiguousFileException(message: String) : IOException(message)
