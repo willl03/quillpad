@@ -140,8 +140,11 @@ class StorageBackend(private val context: Context, private val config: StorageCo
             DocumentsContract.deleteDocument(context.contentResolver, resolved.file.uri)
         } ?: false
 
-        Log.d(TAG, "deleteNote: Deleted (${result}) the file: ${resolved.relativePath}")
-        result
+        // Some providers refuse deleteDocument even though the document is deletable.
+        val deleted = result || runCatching { resolved.file.delete() }.getOrDefault(false)
+
+        Log.d(TAG, "deleteNote: Deleted ($deleted) the file: ${resolved.relativePath}")
+        deleted
     }
 
     override suspend fun getNote(mapping: IdMapping): SyncNote? = storageMutex.withLock {
