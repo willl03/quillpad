@@ -1,5 +1,6 @@
 package org.qosp.notes.data.repo
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -7,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.msoul.datastore.defaultOf
+import org.qosp.notes.R
 import org.qosp.notes.data.dao.IdMappingDao
 import org.qosp.notes.data.dao.NoteDao
 import org.qosp.notes.data.dao.ReminderDao
@@ -47,16 +49,12 @@ class NoteRepositoryImpl(
     private val fileStorageReconciler: FileStorageReconciler,
     private val processRemoteActions: ProcessRemoteActions,
     private val syncingScope: SyncScope,
-    private val toaster: Toaster
+    private val toaster: Toaster,
+    private val context: Context,
 ) : NoteRepository {
 
     private val tag = NoteRepositoryImpl::class.java.simpleName
     private val syncMutex = Mutex()
-
-    private companion object {
-        const val EMPTY_FOLDER_MESSAGE =
-            "Storage folder appears empty or unavailable; skipping deletions"
-    }
 
     private suspend fun cleanMappingsForLocalNotes(vararg notes: Note) {
         val n = notes.filter { it.isLocalOnly }
@@ -96,7 +94,7 @@ class NoteRepositoryImpl(
 
                 if (syncProvider.type == CloudService.FILE_STORAGE) {
                     if (!syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider)) {
-                        return@withLock GenericError(EMPTY_FOLDER_MESSAGE)
+                        return@withLock GenericError(context.getString(R.string.sync_file_storage_empty))
                     }
                 } else {
                     syncRemoteProvider(allLocalNotes, allRemoteNotes, syncProvider)
@@ -125,8 +123,8 @@ class NoteRepositoryImpl(
         // An empty listing is much more likely to be an unmounted SD card / lost permission
         // than the user deleting every file. Never wipe the local index in that case.
         if (files.isEmpty() && mappingCount > 0) {
-            Log.w(tag, "syncFileStorage: $EMPTY_FOLDER_MESSAGE")
-            toaster.showLong(EMPTY_FOLDER_MESSAGE)
+            Log.w(tag, "syncFileStorage: ${context.getString(R.string.sync_file_storage_empty)}")
+            toaster.showLong(R.string.sync_file_storage_empty)
             return false
         }
 
@@ -202,8 +200,8 @@ class NoteRepositoryImpl(
 
         if (result.removedLocalNotes.isNotEmpty()) {
             toaster.showShort(
-                "${result.removedLocalNotes.size} notes removed because their files were " +
-                    "deleted or moved out of the folder"
+                R.string.sync_file_storage_removed_notes,
+                result.removedLocalNotes.size,
             )
         }
 
@@ -214,8 +212,8 @@ class NoteRepositoryImpl(
                     "their files disappeared but they had unsynced edits",
             )
             toaster.showShort(
-                "${result.keptLocalNotes.size} notes kept locally because their files disappeared " +
-                    "but they had unsaved changes"
+                R.string.sync_file_storage_kept_notes,
+                result.keptLocalNotes.size,
             )
         }
     }

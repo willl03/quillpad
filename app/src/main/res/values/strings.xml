@@ -122,6 +122,11 @@
     <string name="preferences_nextcloud_set_your_credentials">Set your credentials</string>
     <string name="preferences_nextcloud_set_server_url">Set the server\'s URL</string>
     <string name="preferences_file_storage_info">Select a folder from local storage or from a cloud provider. The folder is the source of truth: notes are read from and written to it directly, and notes deleted or moved out of the folder are removed from the app.</string>
+    <string name="sync_file_storage_empty">Storage folder appears empty or unavailable; skipping deletions</string>
+    <string name="sync_file_storage_removed_notes">%1$d notes removed because their files were deleted or moved out of the folder</string>
+    <string name="sync_file_storage_kept_notes">%1$d notes kept locally because their files disappeared but they had unsaved changes</string>
+    <string name="sync_file_storage_file_missing">Note file was moved or deleted; it will be reconciled on the next sync</string>
+    <string name="sync_file_storage_ambiguous">Unable to identify the note\'s file; it will be reconciled on the next sync</string>
     <string name="preferences_file_storage_location">Storage location</string>
     <string name="preferences_file_storage_select">Select Storage location</string>
     <string name="preferences_sync_on_wifi">Wi-Fi</string>

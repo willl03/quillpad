@@ -1,6 +1,8 @@
 package org.qosp.notes.ui.utils
 
+import android.content.Context
 import android.widget.Toast
+import io.mockk.mockk
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -16,7 +18,7 @@ class ToasterTest {
 
     @Before
     fun setUp() {
-        toaster = Toaster()
+        toaster = Toaster(mockk<Context>(relaxed = true))
     }
 
     @Test
