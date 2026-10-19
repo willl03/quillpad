@@ -178,7 +178,12 @@ class NoteRepositoryImpl(
         result.remoteUpdates.forEach { processRemoteActions(it.note.id, Update(it.note)) }
 
         if (result.removedMappingNoteIds.isNotEmpty()) {
-            idMappingDao.deleteByLocalId(*result.removedMappingNoteIds.toLongArray())
+            // These are file-storage mappings that must be detached (kept-local notes or
+            // stale rows). Do not remove another provider's mapping for the same note.
+            idMappingDao.deleteByLocalIdsAndProvider(
+                result.removedMappingNoteIds,
+                CloudService.FILE_STORAGE,
+            )
         }
 
         if (result.removedLocalNotes.isNotEmpty()) {
@@ -399,7 +404,9 @@ class NoteRepositoryImpl(
                         )
                     )
                 } else {
-                    if (mapping != null) idMappingDao.deleteByLocalId(note.id)
+                    if (mapping != null) {
+                        idMappingDao.deleteByLocalIdAndProvider(note.id, CloudService.FILE_STORAGE)
+                    }
                     val created = syncProvider.createNote(note)
                     idMappingDao.insert(created.getMapping(note.id, CloudService.FILE_STORAGE))
                     noteDao.update(

@@ -22,6 +22,12 @@ interface IdMappingDao {
     @Query("DELETE FROM cloud_ids WHERE localNoteId IN (:ids)")
     suspend fun deleteByLocalId(vararg ids: Long)
 
+    @Query("DELETE FROM cloud_ids WHERE localNoteId = :localId AND provider = :provider")
+    suspend fun deleteByLocalIdAndProvider(localId: Long, provider: CloudService)
+
+    @Query("DELETE FROM cloud_ids WHERE localNoteId IN (:ids) AND provider = :provider")
+    suspend fun deleteByLocalIdsAndProvider(ids: List<Long>, provider: CloudService)
+
     @Query("UPDATE cloud_ids SET isDeletedLocally = 1 WHERE localNoteId IN (:ids)")
     suspend fun setNotesToBeDeleted(vararg ids: Long)
 

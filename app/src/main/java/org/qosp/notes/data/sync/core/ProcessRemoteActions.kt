@@ -116,7 +116,7 @@ class ProcessRemoteActions(
                 Log.w(tag, "deleteRemoteNotes: Could not delete file for note ${note.id}; keeping mapping")
                 return@let
             }
-            idMappingDao.deleteByLocalId(note.id)
+            idMappingDao.deleteByLocalIdAndProvider(note.id, syncProvider.type)
         }
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to delete notes: ${e.message}", e)
