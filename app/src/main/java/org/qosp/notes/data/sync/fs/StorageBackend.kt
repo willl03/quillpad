@@ -390,23 +390,27 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         val targetName = uniqueName(parent, newName, currentName = file.name)
 
         Log.d(TAG, "renameFile: Renaming ${file.name} to $targetName")
-        val renamed = runCatching {
+        val renamedUri = runCatching {
             DocumentsContract.renameDocument(context.contentResolver, file.uri, targetName)
         }.getOrNull()
 
         val newPath = if (parentPath.isEmpty()) targetName else "$parentPath/$targetName"
 
-        if (renamed == null) {
-            // The provider may take a moment to expose the rename, or the target name may be
-            // rejected. Re-check the parent before giving up.
-            repeat(4) { attempt ->
-                parent.listFiles().firstOrNull { it.name == targetName }?.let {
-                    return ResolvedFile(it, newPath)
+        if (renamedUri == null) {
+            // Some providers do not implement renameDocument but do support DocumentFile.
+            val renamedWithDocument = runCatching { file.renameTo(targetName) }.getOrDefault(false)
+            if (!renamedWithDocument) {
+                // The provider may take a moment to expose a rename, or the target name may
+                // have been rejected. Re-check the parent before giving up.
+                repeat(4) { attempt ->
+                    parent.listFiles().firstOrNull { it.name == targetName }?.let {
+                        return ResolvedFile(it, newPath)
+                    }
+                    if (attempt < 3) delay(150)
                 }
-                if (attempt < 3) delay(150)
+                Log.w(TAG, "renameFile: Unable to rename ${file.name} to $targetName")
+                return null
             }
-            Log.w(TAG, "renameFile: Unable to rename ${file.name} to $targetName")
-            return null
         }
 
         // Prefer the tree-based URI from the parent listing; some providers return a bare
@@ -418,7 +422,8 @@ class StorageBackend(private val context: Context, private val config: StorageCo
             if (attempt < 3) delay(150)
         }
 
-        val fallback = DocumentFile.fromSingleUri(context, renamed)
+        val fallbackUri = renamedUri ?: file.uri
+        val fallback = DocumentFile.fromSingleUri(context, fallbackUri)
         return fallback?.takeIf { it.exists() }?.let { ResolvedFile(it, newPath) }
     }
 
