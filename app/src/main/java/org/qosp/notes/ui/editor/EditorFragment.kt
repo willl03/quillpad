@@ -67,6 +67,8 @@ import org.qosp.notes.data.model.NoteColor
 import org.qosp.notes.data.model.NoteTask
 import org.qosp.notes.databinding.FragmentEditorBinding
 import org.qosp.notes.databinding.LayoutAttachmentBinding
+import org.qosp.notes.data.sync.core.BackendProvider
+import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.preferences.DefaultEditorMode
 import org.qosp.notes.ui.attachments.dialog.EditAttachmentDialog
 import org.qosp.notes.ui.attachments.fromUri
@@ -144,6 +146,8 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
     val markwon: Markwon by inject()
 
     val markwonEditor: MarkwonEditor by inject()
+
+    private val backendProvider: BackendProvider by inject()
 
     override val hasDefaultAnimation = false
     override val toolbar: Toolbar
@@ -749,7 +753,10 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
         findItem(R.id.action_do_not_sync)?.apply {
             isChecked = note.isLocalOnly
-            isVisible = !note.isDeleted
+            // In file storage mode a note *is* a file in the folder, so "do not sync" has no
+            // meaning. Keep the toggle for the network providers.
+            isVisible = !note.isDeleted &&
+                backendProvider.syncProvider.value?.type != CloudService.FILE_STORAGE
         }
 
         findItem(R.id.action_screen_always_on)?.apply {

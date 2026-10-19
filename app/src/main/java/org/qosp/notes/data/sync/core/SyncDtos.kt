@@ -24,4 +24,11 @@ data class SyncNote(
     val category: String = "",
     val favorite: Boolean? = null,
     val readOnly: Boolean = false,
+    /** Path relative to the storage root, e.g. "note.md" or "folder/note.md". */
+    val relativePath: String? = null,
+    /** Hash of the content, used to detect moves and to reconcile file/local changes. */
+    val contentHash: String? = null,
+    /** File extension without the dot, e.g. "md" or "txt". */
+    val fileExtension: String? = null,
+    val size: Long = 0L,
 )

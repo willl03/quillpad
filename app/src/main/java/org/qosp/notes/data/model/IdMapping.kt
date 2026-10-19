@@ -25,4 +25,10 @@ data class IdMapping(
     val isDeletedLocally: Boolean,
     val isBeingUpdated: Boolean = false,
     val storageUri: String? = null,
+    /** Path relative to the storage root, e.g. "note.md" or "folder/note.md". */
+    val relativePath: String? = null,
+    /** Hash of the file content at the last successful sync. Used as the 3-way merge base. */
+    val contentHash: String? = null,
+    /** File timestamp at the last successful sync, in epoch seconds. */
+    val lastSyncedModified: Long? = null,
 ) : Parcelable

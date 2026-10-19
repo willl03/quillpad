@@ -24,7 +24,7 @@ class DatabaseMigrationTest {
     /**
      * Tests that all migrations can be applied together.
      *
-     * This test creates a database and applies all migrations from version 1 to version 5.
+     * This test creates a database and applies all migrations from version 1 to version 6.
      * It verifies that the database can be opened successfully after all migrations are applied.
      */
     @Test
@@ -41,7 +41,8 @@ class DatabaseMigrationTest {
                 AppDatabase.MIGRATION_1_2,
                 AppDatabase.MIGRATION_2_3,
                 AppDatabase.MIGRATION_3_4,
-                AppDatabase.MIGRATION_4_5
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6
             )
             .build()
 
@@ -156,7 +157,8 @@ class DatabaseMigrationTest {
         )
             .addMigrations(
                 AppDatabase.MIGRATION_3_4,
-                AppDatabase.MIGRATION_4_5
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6
             )
             .build()
 

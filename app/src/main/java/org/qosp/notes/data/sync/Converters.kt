@@ -5,6 +5,7 @@ import org.qosp.notes.data.model.Note
 import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.nextcloud.NextcloudNote
 import org.qosp.notes.preferences.CloudService
+import java.time.Instant
 
 fun NextcloudNote.asSyncNote() = SyncNote(
     id = id,
@@ -24,16 +25,16 @@ fun SyncNote.toLocalNote(defaultPinned: Boolean) = Note(
     title = title,
     content = content ?: "",
     isPinned = favorite ?: defaultPinned,
-    modifiedDate = lastModified,
+    modifiedDate = lastModified.takeIf { it > 0 } ?: Instant.now().epochSecond,
     notebookId = null, // TODO: Handle category to notebook conversion if needed
-    isMarkdownEnabled = true // Default to Markdown enabled
+    isMarkdownEnabled = fileExtension?.equals("md", ignoreCase = true) ?: true
 )
 
 fun SyncNote.updateLocalNote(localNote: Note) = localNote.copy(
     title = title,
     content = content ?: "",
     isPinned = favorite ?: localNote.isPinned,
-    modifiedDate = lastModified,
+    modifiedDate = lastModified.takeIf { it > 0 } ?: localNote.modifiedDate,
 )
 
 fun SyncNote.getMapping(noteId: Long, service: CloudService) = IdMapping(
@@ -42,5 +43,8 @@ fun SyncNote.getMapping(noteId: Long, service: CloudService) = IdMapping(
     provider = service,
     extras = extra,
     isDeletedLocally = false,
-    storageUri = idStr
+    storageUri = idStr,
+    relativePath = relativePath,
+    contentHash = contentHash,
+    lastSyncedModified = lastModified,
 )

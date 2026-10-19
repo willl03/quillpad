@@ -14,7 +14,9 @@ import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.di.SyncScope
+import org.qosp.notes.preferences.CloudService
 import org.qosp.notes.ui.utils.Toaster
+import java.io.FileNotFoundException
 import java.util.concurrent.ConcurrentHashMap
 
 class ProcessRemoteActions(
@@ -104,7 +106,13 @@ class ProcessRemoteActions(
 
     private suspend fun deleteRemoteNotes(note: Note, syncProvider: ISyncBackend) = try {
         idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type)?.let { mapping ->
-            syncProvider.deleteNote(mapping = mapping)
+            val deleted = syncProvider.deleteNote(mapping = mapping)
+            if (syncProvider.type == CloudService.FILE_STORAGE && !deleted) {
+                // Keep the mapping so the next sync can retry instead of importing the
+                // leftover file as a brand-new note.
+                Log.w(tag, "deleteRemoteNotes: Could not delete file for note ${note.id}; keeping mapping")
+                return@let
+            }
             idMappingDao.deleteByLocalId(note.id)
         }
     } catch (e: Exception) {
@@ -114,7 +122,14 @@ class ProcessRemoteActions(
     private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
         val created = syncProvider.createNote(note)
         idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
-        noteDao.updateLastModified(note.id, created.lastModified)
+        noteDao.update(
+            note.copy(
+                // The folder provider may have suffixed the filename to avoid a collision.
+                title = created.title,
+                modifiedDate = created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
+            ).toEntity()
+        )
+        Unit
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
         toaster.showShort(e.message ?: "Failed to create note")
@@ -125,6 +140,11 @@ class ProcessRemoteActions(
             val updatedMapping = syncProvider.updateNote(note, it)
             idMappingDao.update(updatedMapping)
         }
+    } catch (e: FileNotFoundException) {
+        // The file was moved or deleted outside the app. The next sync will either follow it
+        // or keep the local edit; never recreate it here.
+        Log.w(tag, "processRemoteOperation: Note file is gone; leaving it for reconciliation: ${e.message}")
+        toaster.showShort("Note file was moved or deleted; it will be reconciled on the next sync")
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to update note ID=${note.id}: ${e.message}", e)
     }

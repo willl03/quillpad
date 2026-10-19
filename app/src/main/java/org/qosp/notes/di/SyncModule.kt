@@ -8,6 +8,7 @@ import org.koin.dsl.module
 import org.qosp.notes.data.sync.core.BackendProvider
 import org.qosp.notes.data.sync.core.ProcessRemoteActions
 import org.qosp.notes.data.sync.core.SynchronizeNotes
+import org.qosp.notes.data.sync.fs.FileStorageReconciler
 
 object SyncModule {
 
@@ -17,6 +18,7 @@ object SyncModule {
         singleOf(::BackendProvider)
         singleOf(::ProcessRemoteActions)
         singleOf(::SynchronizeNotes)
+        singleOf(::FileStorageReconciler)
     }
 }
 

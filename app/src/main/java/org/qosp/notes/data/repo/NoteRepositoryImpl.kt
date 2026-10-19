@@ -25,8 +25,10 @@ import org.qosp.notes.data.sync.core.RemoteOperation.Delete
 import org.qosp.notes.data.sync.core.RemoteOperation.Update
 import org.qosp.notes.data.sync.core.Success
 import org.qosp.notes.data.sync.core.SyncMethod
+import org.qosp.notes.data.sync.core.SyncNote
 import org.qosp.notes.data.sync.core.SyncNotesResult
 import org.qosp.notes.data.sync.core.SynchronizeNotes
+import org.qosp.notes.data.sync.fs.FileStorageReconciler
 import org.qosp.notes.data.sync.getMapping
 import org.qosp.notes.data.sync.toLocalNote
 import org.qosp.notes.data.sync.updateLocalNote
@@ -42,6 +44,7 @@ class NoteRepositoryImpl(
     private val reminderDao: ReminderDao,
     private val backendProvider: BackendProvider,
     private val synchronizeNotes: SynchronizeNotes,
+    private val fileStorageReconciler: FileStorageReconciler,
     private val processRemoteActions: ProcessRemoteActions,
     private val syncingScope: SyncScope,
     private val toaster: Toaster
@@ -79,32 +82,18 @@ class NoteRepositoryImpl(
         }
 
         return syncMutex.withLock {
-            val syncMethod =
-                if (idMappingDao.getCountByCloudService(syncProvider.type) == 0)
-                    SyncMethod.TITLE else SyncMethod.MAPPING
             try {
-                // Get all local notes (excluding local-only ones)
-                val localNotes = getAll().first().filterNot { it.isLocalOnly || it.isDeleted }
+                val allLocalNotes = getAll().first()
 
                 // Get all remote notes and convert to metadata
                 val allRemoteNotes =
                     syncProvider.getAll() ?: return@withLock GenericError("Failed to fetch remote notes")
-                Log.d(
-                    tag, "syncNotes: Syncing by $syncMethod. " +
-                        "Found ${allRemoteNotes.size} remote notes, and ${localNotes.size} local notes"
-                )
 
-                // Use SynchronizeNotes to determine what updates are needed
-                val syncResult =
-                    synchronizeNotes(localNotes, allRemoteNotes, service = syncProvider.type, syncMethod)
-                Log.d(
-                    tag, "sync updates: ${syncResult.localUpdates.size} local, " +
-                        "${syncResult.remoteUpdates.size} remote"
-                )
-
-                if (syncMethod == SyncMethod.TITLE) applyMappingChanges(syncResult, syncProvider) // Initial import
-                applyLocalUpdates(syncResult.localUpdates, syncProvider)
-                applyRemoteUpdates(syncResult.remoteUpdates)
+                if (syncProvider.type == CloudService.FILE_STORAGE) {
+                    syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider)
+                } else {
+                    syncRemoteProvider(allLocalNotes, allRemoteNotes, syncProvider)
+                }
                 Log.i(tag, "syncNotes: Synchronization completed successfully")
             } catch (e: Exception) {
                 Log.e(tag, "syncNotes: Synchronization failed: ${e.message}", e)
@@ -112,6 +101,157 @@ class NoteRepositoryImpl(
             }
             Success
         }
+    }
+
+    /**
+     * File storage is folder-authoritative: the file listing decides which notes exist.
+     * Nothing is uploaded from here; app-created notes are written by [processRemoteActions]
+     * when they are created or edited.
+     */
+    private suspend fun syncFileStorage(
+        allLocalNotes: List<Note>,
+        files: List<SyncNote>,
+        syncProvider: ISyncBackend,
+    ) {
+        val mappingCount = idMappingDao.getCountByCloudService(CloudService.FILE_STORAGE)
+
+        // An empty listing is much more likely to be an unmounted SD card / lost permission
+        // than the user deleting every file. Never wipe the local index in that case.
+        if (files.isEmpty() && mappingCount > 0) {
+            val message = "Storage folder appears empty or unavailable; skipping deletions"
+            Log.w(tag, "syncFileStorage: $message")
+            toaster.showLong(message)
+            return
+        }
+
+        val localNotes = allLocalNotes.filterNot { it.isDeleted }
+        val mappings = idMappingDao.getAllByCloudService(CloudService.FILE_STORAGE)
+
+        Log.d(
+            tag,
+            "syncFileStorage: Found ${files.size} files, ${localNotes.size} local notes, " +
+                "$mappingCount mappings",
+        )
+
+        val result = fileStorageReconciler(
+            localNotes = localNotes,
+            files = files,
+            mappings = mappings,
+        )
+
+        Log.d(
+            tag,
+            "syncFileStorage: ${result.imports.size} imports, ${result.localUpdates.size} local updates, " +
+                "${result.remoteUpdates.size} writes, ${result.remoteDeletes.size} file deletes, " +
+                "${result.removedLocalNotes.size} permanent note deletes",
+        )
+
+        applyFileStorageResult(result, syncProvider)
+    }
+
+    private suspend fun applyFileStorageResult(
+        result: FileStorageReconciler.Result,
+        syncProvider: ISyncBackend,
+    ) {
+        // Notes whose file disappeared are gone for good: remove the note, its reminders and
+        // its mapping. This is intentionally not the in-app bin: the folder is authoritative.
+        for (note in result.removedLocalNotes) {
+            try {
+                reminderDao.deleteIfNoteIdIn(listOf(note.id))
+                noteDao.delete(note.toEntity())
+                idMappingDao.deleteByLocalId(note.id)
+                Log.d(tag, "applyFileStorageResult: Removed note ${note.id} (${note.title})")
+            } catch (e: Exception) {
+                Log.e(tag, "applyFileStorageResult: Failed to remove note ${note.id}", e)
+            }
+        }
+
+        // Imports from new files and updates from changed files.
+        applyLocalUpdates(result.imports + result.localUpdates, syncProvider)
+
+        // Adoption/rename/move mapping updates.
+        result.newMappings.forEach { upsertMapping(it) }
+        result.updatedMappings.forEach { idMappingDao.update(it) }
+
+        // Finish in-app deletes whose file was still present, and write local edits.
+        result.remoteDeletes.forEach { processRemoteActions(it.note.id, Delete(it.note)) }
+        result.remoteUpdates.forEach { processRemoteActions(it.note.id, Update(it.note)) }
+
+        if (result.removedMappingNoteIds.isNotEmpty()) {
+            idMappingDao.deleteByLocalId(*result.removedMappingNoteIds.toLongArray())
+        }
+
+        if (result.removedLocalNotes.isNotEmpty()) {
+            toaster.showShort(
+                "${result.removedLocalNotes.size} notes removed because their files were " +
+                    "deleted or moved out of the folder"
+            )
+        }
+
+        if (result.keptLocalNotes.isNotEmpty()) {
+            Log.w(
+                tag,
+                "applyFileStorageResult: Kept ${result.keptLocalNotes.size} notes locally because " +
+                    "their files disappeared but they had unsynced edits",
+            )
+            toaster.showShort(
+                "${result.keptLocalNotes.size} notes kept locally because their files disappeared " +
+                    "but they had unsaved changes"
+            )
+        }
+    }
+
+    private suspend fun upsertMapping(mapping: IdMapping) {
+        val provider = mapping.provider ?: return
+        val existing = idMappingDao.getByLocalIdAndProvider(mapping.localNoteId, provider)
+            ?: idMappingDao.getNonRemoteByLocalId(mapping.localNoteId)
+
+        if (existing == null) {
+            idMappingDao.insert(mapping)
+        } else {
+            idMappingDao.update(
+                existing.copy(
+                    remoteNoteId = mapping.remoteNoteId,
+                    provider = mapping.provider,
+                    extras = mapping.extras,
+                    isDeletedLocally = false,
+                    storageUri = mapping.storageUri,
+                    relativePath = mapping.relativePath,
+                    contentHash = mapping.contentHash,
+                    lastSyncedModified = mapping.lastSyncedModified,
+                )
+            )
+        }
+    }
+
+    private suspend fun syncRemoteProvider(
+        allLocalNotes: List<Note>,
+        allRemoteNotes: List<SyncNote>,
+        syncProvider: ISyncBackend,
+    ) {
+        val syncMethod =
+            if (idMappingDao.getCountByCloudService(syncProvider.type) == 0)
+                SyncMethod.TITLE else SyncMethod.MAPPING
+
+        // Get all local notes (excluding local-only ones)
+        val localNotes = allLocalNotes.filterNot { it.isLocalOnly || it.isDeleted }
+
+        Log.d(
+            tag, "syncNotes: Syncing by $syncMethod. " +
+                "Found ${allRemoteNotes.size} remote notes, and ${localNotes.size} local notes"
+        )
+
+        // Use SynchronizeNotes to determine what updates are needed
+        val syncResult =
+            synchronizeNotes(localNotes, allRemoteNotes, service = syncProvider.type, syncMethod)
+        Log.d(
+            tag, "sync updates: ${syncResult.localUpdates.size} local, " +
+                "${syncResult.remoteUpdates.size} remote"
+        )
+
+        if (syncMethod == SyncMethod.TITLE) applyMappingChanges(syncResult, syncProvider) // Initial import
+        applyLocalUpdates(syncResult.localUpdates, syncProvider)
+        applyRemoteUpdates(syncResult.remoteUpdates)
     }
 
     private suspend fun applyLocalUpdates(localUpdates: List<NoteAction>, syncProvider: ISyncBackend) {
@@ -219,17 +359,58 @@ class NoteRepositoryImpl(
                 syncingScope.launch {
                     val syncableNotes = notes.filterNot { it.isLocalOnly }
                     Log.d(tag, "restoreNotes: Re-syncing ${syncableNotes.size} restored notes to ${syncProvider.type}")
-                    try {
-                        syncableNotes
-                            .associateWith { syncProvider.createNote(it) }
-                            .forEach { (n, syncNote) ->
-                                idMappingDao.insert(syncNote.getMapping(n.id, syncProvider.type))
-                                noteDao.updateLastModified(n.id, syncNote.lastModified)
-                            }
-                    } catch (e: Exception) {
-                        Log.e(tag, "restoreNotes: Error re-syncing restored notes", e)
+
+                    if (syncProvider.type == CloudService.FILE_STORAGE) {
+                        restoreFileStorageNotes(syncableNotes, syncProvider)
+                    } else {
+                        try {
+                            syncableNotes
+                                .associateWith { syncProvider.createNote(it) }
+                                .forEach { (n, syncNote) ->
+                                    idMappingDao.insert(syncNote.getMapping(n.id, syncProvider.type))
+                                    noteDao.updateLastModified(n.id, syncNote.lastModified)
+                                }
+                        } catch (e: Exception) {
+                            Log.e(tag, "restoreNotes: Error re-syncing restored notes", e)
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Restoring a file-backed note must not blindly create a second file. If the note's file
+     * still exists, re-link it; only create when there really is nothing on disk.
+     */
+    private suspend fun restoreFileStorageNotes(notes: List<Note>, syncProvider: ISyncBackend) {
+        for (note in notes) {
+            try {
+                val mapping = idMappingDao.getByLocalIdAndProvider(note.id, CloudService.FILE_STORAGE)
+                val existingFile = mapping?.let { syncProvider.getNote(it) }
+
+                if (existingFile != null && mapping != null) {
+                    idMappingDao.update(
+                        mapping.copy(
+                            storageUri = existingFile.idStr,
+                            relativePath = existingFile.relativePath,
+                            contentHash = existingFile.contentHash,
+                            lastSyncedModified = existingFile.lastModified,
+                        )
+                    )
+                } else {
+                    if (mapping != null) idMappingDao.deleteByLocalId(note.id)
+                    val created = syncProvider.createNote(note)
+                    idMappingDao.insert(created.getMapping(note.id, CloudService.FILE_STORAGE))
+                    noteDao.update(
+                        note.copy(
+                            title = created.title,
+                            modifiedDate = created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
+                        ).toEntity()
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "restoreFileStorageNotes: Failed to restore note ${note.id}", e)
             }
         }
     }
@@ -251,9 +432,17 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun permanentlyDeleteNotesInBin() {
-        val noteIds = noteDao.getDeleted(defaultOf()).first().map { it.id }.toLongArray()
+        val deletedNotes = noteDao.getDeleted(defaultOf()).first()
+        val noteIds = deletedNotes.map { it.id }.toLongArray()
         Log.d(tag, "permanentlyDeleteNotesInBin: Permanently deleting ${noteIds.size} notes from bin")
-        idMappingDao.deleteByLocalId(*noteIds)
+
+        if (backendProvider.syncProvider.value?.type == CloudService.FILE_STORAGE) {
+            // Let the file delete finish before dropping the mappings, otherwise a leftover
+            // file would be imported as a brand-new note on the next sync.
+            deletedNotes.forEach { processRemoteActions(it.id, Delete(it)) }
+        } else {
+            idMappingDao.deleteByLocalId(*noteIds)
+        }
         noteDao.permanentlyDeleteNotesInBin()
     }
 

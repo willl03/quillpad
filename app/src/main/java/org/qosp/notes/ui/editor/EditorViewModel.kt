@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -48,21 +49,27 @@ class EditorViewModel(
     val data = noteIdFlow
         .filterNotNull()
         .flatMapLatest { noteRepository.getById(it) }
-        .filterNotNull()
         .flatMapLatest { note ->
-            getNotebookData(note.notebookId).flatMapLatest { notebook ->
-                preferenceRepository.getAll().map { prefs ->
-                    Data(
-                        note = note,
-                        notebook = notebook,
-                        dateTimeFormats = prefs.dateFormat to prefs.timeFormat,
-                        openMediaInternally = prefs.openMediaIn == OpenMediaIn.INTERNAL,
-                        showDates = prefs.showDate == ShowDate.YES,
-                        editorFontSize = prefs.editorFontSize.fontSize,
-                        showFabChangeMode = prefs.showFabChangeMode == ShowFabChangeMode.FAB,
-                        defaultEditorMode = prefs.defaultEditorMode,
-                        isInitialized = true,
-                    )
+            // A null note means it was deleted outside the app (folder-authoritative mode).
+            // Emit an initialized empty state so the editor can close instead of keeping a
+            // stale note on screen.
+            if (note == null) {
+                flowOf(Data(isInitialized = true))
+            } else {
+                getNotebookData(note.notebookId).flatMapLatest { notebook ->
+                    preferenceRepository.getAll().map { prefs ->
+                        Data(
+                            note = note,
+                            notebook = notebook,
+                            dateTimeFormats = prefs.dateFormat to prefs.timeFormat,
+                            openMediaInternally = prefs.openMediaIn == OpenMediaIn.INTERNAL,
+                            showDates = prefs.showDate == ShowDate.YES,
+                            editorFontSize = prefs.editorFontSize.fontSize,
+                            showFabChangeMode = prefs.showFabChangeMode == ShowFabChangeMode.FAB,
+                            defaultEditorMode = prefs.defaultEditorMode,
+                            isInitialized = true,
+                        )
+                    }
                 }
             }
         }
