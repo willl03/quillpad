@@ -6,7 +6,9 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.qosp.notes.data.model.IdMapping
@@ -196,14 +198,19 @@ class StorageBackend(private val context: Context, private val config: StorageCo
     }
 
     /** Recursively lists every note file under [root]. Must be called with [storageMutex] held. */
-    private fun listNotes(root: DocumentFile): List<SyncNote> {
+    private suspend fun listNotes(root: DocumentFile): List<SyncNote> {
         val files = mutableListOf<Pair<DocumentFile, String>>()
         walkNotes(root, "", files)
         return files.map { (file, path) -> getFile(file, path) }
     }
 
-    private fun walkNotes(dir: DocumentFile, basePath: String, out: MutableList<Pair<DocumentFile, String>>) {
+    private suspend fun walkNotes(
+        dir: DocumentFile,
+        basePath: String,
+        out: MutableList<Pair<DocumentFile, String>>,
+    ) {
         for (child in dir.listFiles()) {
+            currentCoroutineContext().ensureActive()
             val name = child.name ?: continue
             when {
                 child.isDirectory -> {
@@ -265,7 +272,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
      * note. If the candidates disagree and we cannot identify the file, return Ambiguous so
      * callers do not overwrite or delete the wrong document.
      */
-    private fun resolveMapping(root: DocumentFile, mapping: IdMapping): Resolution {
+    private suspend fun resolveMapping(root: DocumentFile, mapping: IdMapping): Resolution {
         val baseHash = mapping.contentHash
         val lastPath = mapping.relativePath
         val lastFileName = lastPath?.substringAfterLast('/') ?: NoteFileNames.fileNameFromUri(mapping.storageUri)
@@ -337,7 +344,7 @@ class StorageBackend(private val context: Context, private val config: StorageCo
         return Resolution.Found(ResolvedFile(file, note.relativePath.orEmpty()))
     }
 
-    private fun findByFileName(root: DocumentFile, fileName: String?): Resolution {
+    private suspend fun findByFileName(root: DocumentFile, fileName: String?): Resolution {
         if (fileName.isNullOrBlank()) return Resolution.NotFound
         val allNotes = runCatching { listNotes(root) }.getOrNull()
             ?: return Resolution.Ambiguous
