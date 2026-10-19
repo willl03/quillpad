@@ -53,6 +53,11 @@ class NoteRepositoryImpl(
     private val tag = NoteRepositoryImpl::class.java.simpleName
     private val syncMutex = Mutex()
 
+    private companion object {
+        const val EMPTY_FOLDER_MESSAGE =
+            "Storage folder appears empty or unavailable; skipping deletions"
+    }
+
     private suspend fun cleanMappingsForLocalNotes(vararg notes: Note) {
         val n = notes.filter { it.isLocalOnly }
         Log.d(tag, "cleanMappingsForLocalNotes: Cleaning ${n.size} local-only notes from ${notes.size} total")
@@ -90,7 +95,9 @@ class NoteRepositoryImpl(
                     syncProvider.getAll() ?: return@withLock GenericError("Failed to fetch remote notes")
 
                 if (syncProvider.type == CloudService.FILE_STORAGE) {
-                    syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider)
+                    if (!syncFileStorage(allLocalNotes, allRemoteNotes, syncProvider)) {
+                        return@withLock GenericError(EMPTY_FOLDER_MESSAGE)
+                    }
                 } else {
                     syncRemoteProvider(allLocalNotes, allRemoteNotes, syncProvider)
                 }
@@ -112,16 +119,15 @@ class NoteRepositoryImpl(
         allLocalNotes: List<Note>,
         files: List<SyncNote>,
         syncProvider: ISyncBackend,
-    ) {
+    ): Boolean {
         val mappingCount = idMappingDao.getCountByCloudService(CloudService.FILE_STORAGE)
 
         // An empty listing is much more likely to be an unmounted SD card / lost permission
         // than the user deleting every file. Never wipe the local index in that case.
         if (files.isEmpty() && mappingCount > 0) {
-            val message = "Storage folder appears empty or unavailable; skipping deletions"
-            Log.w(tag, "syncFileStorage: $message")
-            toaster.showLong(message)
-            return
+            Log.w(tag, "syncFileStorage: $EMPTY_FOLDER_MESSAGE")
+            toaster.showLong(EMPTY_FOLDER_MESSAGE)
+            return false
         }
 
         val localNotes = allLocalNotes.filterNot { it.isDeleted }
@@ -147,6 +153,7 @@ class NoteRepositoryImpl(
         )
 
         applyFileStorageResult(result, syncProvider)
+        return true
     }
 
     private suspend fun applyFileStorageResult(
