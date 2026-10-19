@@ -42,8 +42,10 @@ class ProcessRemoteActions(
     operator fun invoke(noteId: Long, operation: RemoteOperation) {
         if (!backendProvider.isSyncing) return // Not syncing now
 
-        // Store the operation in the queue, replacing any existing operation for this noteId
-        operationQueue[noteId] = operation
+        // Store the operation in the queue, merging with any operation that has not run yet.
+        // In particular, an Update must not overwrite a pending Create: the Create is what
+        // creates the file and the mapping, and an Update without a mapping is a no-op.
+        operationQueue.compute(noteId) { _, existing -> mergeRemoteOperation(existing, operation) }
 
         if (pendingJobs[noteId] != null) return // If there's an existing job, let it finish.
         val job = syncingScope.launch { // Create a new job to process the operation
@@ -147,5 +149,17 @@ class ProcessRemoteActions(
         toaster.showShort("Note file was moved or deleted; it will be reconciled on the next sync")
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to update note ID=${note.id}: ${e.message}", e)
+    }
+}
+
+/**
+ * Coalesces operations for the same note. A pending Create is preserved and upgraded with the
+ * newest content; a Delete always wins; everything else keeps the latest operation.
+ */
+internal fun mergeRemoteOperation(existing: RemoteOperation?, incoming: RemoteOperation): RemoteOperation {
+    return when {
+        existing is Create && incoming is Update -> Create(incoming.note)
+        existing is Create && incoming is Create -> incoming
+        else -> incoming
     }
 }
