@@ -311,8 +311,13 @@ class FileStorageReconciler {
             if (byHash.size == 1) return byHash.first()
         }
 
+        // A note marked local-only may have been detached because its file disappeared while
+        // it had unsynced edits. Never re-attach it just because a different file with the
+        // same name appeared; content matching is still allowed.
         val title = file.title.trim().lowercase(Locale.ROOT)
-        val byTitle = candidates.filter { it.title.trim().lowercase(Locale.ROOT) == title }
+        val byTitle = candidates.filter {
+            !it.isLocalOnly && it.title.trim().lowercase(Locale.ROOT) == title
+        }
         if (byTitle.size == 1) return byTitle.first()
 
         return null

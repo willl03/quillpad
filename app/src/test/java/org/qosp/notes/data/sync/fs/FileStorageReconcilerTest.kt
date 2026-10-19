@@ -205,6 +205,23 @@ class FileStorageReconcilerTest {
     }
 
     @Test
+    fun `a local-only note is not adopted by a different file with the same name`() {
+        val local = note(1L, "note", "Local edit").copy(isLocalOnly = true)
+        val file = file("note.md", "Different content")
+
+        val result = reconciler(
+            localNotes = listOf(local),
+            files = listOf(file),
+            mappings = emptyList(),
+        )
+
+        assertTrue(result.newMappings.isEmpty())
+        assertTrue(result.localUpdates.isEmpty())
+        assertEquals(1, result.imports.size)
+        assertEquals("Different content", result.imports.single().note.content)
+    }
+
+    @Test
     fun `local-only notes are not retried`() {
         val local = note(1L, "private", "Content").copy(isLocalOnly = true)
 
