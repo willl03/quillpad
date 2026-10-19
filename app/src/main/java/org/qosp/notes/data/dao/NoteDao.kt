@@ -37,6 +37,9 @@ interface NoteDao {
     @Query("UPDATE notes SET modifiedDate = :modified WHERE id = :id")
     suspend fun updateLastModified(id: Long, modified: Long = Instant.now().epochSecond)
 
+    @Query("UPDATE notes SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: Long, title: String)
+
     @Delete
     suspend fun delete(vararg notes: NoteEntity)
 

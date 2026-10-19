@@ -125,14 +125,13 @@ class ProcessRemoteActions(
     private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
         val created = syncProvider.createNote(note)
         idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
-        noteDao.update(
-            note.copy(
-                // The folder provider may have suffixed the filename to avoid a collision.
-                title = created.title,
-                modifiedDate = created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
-            ).toEntity()
+        // Update only the fields the provider can change. Writing the whole note row back
+        // would overwrite edits that arrived while the file was being created.
+        noteDao.updateTitle(note.id, created.title)
+        noteDao.updateLastModified(
+            note.id,
+            created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
         )
-        Unit
     } catch (e: Exception) {
         Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
         toaster.showShort(e.message ?: "Failed to create note")
