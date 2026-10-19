@@ -315,6 +315,7 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
         setupAttachmentsRecycler()
         setupTasksRecycler()
         observeData()
+        observeSyncProvider()
         setupEditTexts()
         setupMarkdown()
         setupListeners()
@@ -770,6 +771,14 @@ class EditorFragment : BaseFragment(R.layout.fragment_editor) {
 
         findItem(R.id.action_remove_all_checked_tasks)?.apply {
             isVisible = note.isList && !note.isDeleted
+        }
+    }
+
+    private fun observeSyncProvider() {
+        // The "Do not sync" item is meaningless for file storage. Re-apply the menu when the
+        // provider changes instead of only when the note data changes.
+        backendProvider.syncProvider.collect(viewLifecycleOwner) {
+            data.note?.let { note -> setupMenuItems(note, note.reminders.isNotEmpty()) }
         }
     }
 
