@@ -122,19 +122,25 @@ class ProcessRemoteActions(
         Log.e(tag, "processRemoteOperation: Failed to delete notes: ${e.message}", e)
     }
 
-    private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) = try {
-        val created = syncProvider.createNote(note)
-        idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
-        // Update only the fields the provider can change. Writing the whole note row back
-        // would overwrite edits that arrived while the file was being created.
-        noteDao.updateTitle(note.id, created.title)
-        noteDao.updateLastModified(
-            note.id,
-            created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
-        )
-    } catch (e: Exception) {
-        Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
-        toaster.showShort(e.message ?: "Failed to create note")
+    private suspend fun insertRemote(syncProvider: ISyncBackend, note: Note) {
+        try {
+            // A sync-triggered retry may race with an already queued Create. Never create a
+            // second file for the same note.
+            if (idMappingDao.getByLocalIdAndProvider(note.id, syncProvider.type) != null) return
+
+            val created = syncProvider.createNote(note)
+            idMappingDao.insert(created.getMapping(note.id, syncProvider.type))
+            // Update only the fields the provider can change. Writing the whole note row back
+            // would overwrite edits that arrived while the file was being created.
+            noteDao.updateTitle(note.id, created.title)
+            noteDao.updateLastModified(
+                note.id,
+                created.lastModified.takeIf { it > 0 } ?: note.modifiedDate,
+            )
+        } catch (e: Exception) {
+            Log.e(tag, "processRemoteOperation: Failed to create note ID=${note.id}: ${e.message}", e)
+            toaster.showShort(e.message ?: "Failed to create note")
+        }
     }
 
     private suspend fun updateRemote(note: Note, syncProvider: ISyncBackend) = try {

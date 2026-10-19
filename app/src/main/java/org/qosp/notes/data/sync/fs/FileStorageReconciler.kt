@@ -37,6 +37,8 @@ class FileStorageReconciler {
         /** Notes whose file disappeared but which had local edits we did not want to lose. */
         val keptLocalNotes: List<Note> = emptyList(),
         val removedMappingNoteIds: List<Long> = emptyList(),
+        /** Local notes that were never written to the folder and should be uploaded now. */
+        val pendingUploads: List<Note> = emptyList(),
     )
 
     operator fun invoke(
@@ -204,8 +206,13 @@ class FileStorageReconciler {
             }
         }
 
-        // 3. Local notes with no mapping and no file are intentionally left alone. They are
-        // not uploaded; a folder-authoritative app does not recreate externally removed files.
+        // 3. Notes with no mapping and no file are retried. This covers a create that was
+        // interrupted (process death, backend unavailable) and was therefore never written.
+        // Notes kept because their file disappeared are marked local-only by the repository,
+        // so they are excluded here; externally deleted notes are removed entirely.
+        result.pendingUploads += localNotes.filter {
+            it.id !in claimedLocalIds && !it.isLocalOnly
+        }
 
         return result.build()
     }
@@ -404,6 +411,7 @@ class FileStorageReconciler {
         val removedLocalNotes = mutableListOf<Note>()
         val keptLocalNotes = mutableListOf<Note>()
         val removedMappingNoteIds = mutableListOf<Long>()
+        val pendingUploads = mutableListOf<Note>()
 
         fun build() = Result(
             imports = imports,
@@ -415,6 +423,7 @@ class FileStorageReconciler {
             removedLocalNotes = removedLocalNotes,
             keptLocalNotes = keptLocalNotes,
             removedMappingNoteIds = removedMappingNoteIds.distinct(),
+            pendingUploads = pendingUploads,
         )
     }
 }

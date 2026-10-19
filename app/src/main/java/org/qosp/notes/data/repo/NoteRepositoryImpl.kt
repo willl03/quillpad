@@ -177,6 +177,13 @@ class NoteRepositoryImpl(
         result.remoteDeletes.forEach { processRemoteActions(it.note.id, Delete(it.note)) }
         result.remoteUpdates.forEach { processRemoteActions(it.note.id, Update(it.note)) }
 
+        // Retry notes that were never written to the folder (interrupted create, backend
+        // unavailable). Kept-local notes are marked so they are not uploaded again.
+        if (result.keptLocalNotes.isNotEmpty()) {
+            noteDao.markLocalOnly(result.keptLocalNotes.map { it.id })
+        }
+        result.pendingUploads.forEach { processRemoteActions(it.id, Create(it)) }
+
         if (result.removedMappingNoteIds.isNotEmpty()) {
             // These are file-storage mappings that must be detached (kept-local notes or
             // stale rows). Do not remove another provider's mapping for the same note.

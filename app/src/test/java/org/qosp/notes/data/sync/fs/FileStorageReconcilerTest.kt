@@ -189,9 +189,11 @@ class FileStorageReconcilerTest {
     }
 
     @Test
-    fun `local notes without a file are never uploaded`() {
+    fun `an unmapped local note without a file is retried`() {
+        val local = note(1L, "local only", "Content")
+
         val result = reconciler(
-            localNotes = listOf(note(1L, "local only", "Content")),
+            localNotes = listOf(local),
             files = emptyList(),
             mappings = emptyList(),
         )
@@ -199,6 +201,20 @@ class FileStorageReconcilerTest {
         assertTrue(result.imports.isEmpty())
         assertTrue(result.remoteUpdates.isEmpty())
         assertTrue(result.removedLocalNotes.isEmpty())
+        assertEquals(listOf(local), result.pendingUploads)
+    }
+
+    @Test
+    fun `local-only notes are not retried`() {
+        val local = note(1L, "private", "Content").copy(isLocalOnly = true)
+
+        val result = reconciler(
+            localNotes = listOf(local),
+            files = emptyList(),
+            mappings = emptyList(),
+        )
+
+        assertTrue(result.pendingUploads.isEmpty())
     }
 
     @Test

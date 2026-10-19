@@ -40,6 +40,9 @@ interface NoteDao {
     @Query("UPDATE notes SET title = :title WHERE id = :id")
     suspend fun updateTitle(id: Long, title: String)
 
+    @Query("UPDATE notes SET isLocalOnly = 1 WHERE id IN (:ids)")
+    suspend fun markLocalOnly(ids: List<Long>)
+
     @Delete
     suspend fun delete(vararg notes: NoteEntity)
 
