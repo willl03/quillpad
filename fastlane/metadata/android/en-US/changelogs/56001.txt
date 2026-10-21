@@ -1,0 +1,18 @@
+First fork release, based on upstream 1.5.14.
+
+File storage is now folder-authoritative:
+• Notes are read from and written directly to the folder you select.
+• Files moved or renamed by another app are followed; notes are not duplicated or recreated.
+• Files deleted or moved out of the folder remove their notes from the app.
+• External edits win; ambiguous files are left alone instead of being overwritten.
+• Unsaved local edits are kept if a note's file disappears.
+• Nested folders are scanned; hidden folders, .trash and sync-conflict files are ignored.
+• Failed writes are retried, and a confirmed "Rescan folder" action applies the folder's current state.
+• An empty or unavailable folder never triggers a mass deletion.
+• Nextcloud sync is unchanged.
+
+Under the hood:
+• Notes are matched by relative path and content hash.
+• Duplicate note mappings are prevented by a database migration and unique index.
+• Stale writes can no longer recreate deleted files.
+• Filenames are sanitized so notes cannot become hidden or sync-conflict files.

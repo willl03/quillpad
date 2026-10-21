@@ -20,8 +20,10 @@ android {
         applicationId = "io.github.quillpad"
         minSdk = 24
         targetSdk = 37
-        versionCode = 56
-        versionName = "1.5.14"
+        // Fork versioning: versionCode = <upstream code> * 1000 + <fork build>;
+        // versionName = "<upstream version>+fork.<build>".
+        versionCode = 56001
+        versionName = "1.5.14+fork.1"
 
         testInstrumentationRunner = "org.qosp.notes.TestRunner"
 

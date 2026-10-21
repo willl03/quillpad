@@ -1,3 +1,42 @@
+<h1 align="center">Quillpad</h1>
+
+<p align="center">
+  <a href="https://github.com/willl03/quillpad/releases"><img src="https://img.shields.io/badge/release-1.5.14%2Bfork.1-6A40F9" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-5030C0" alt="License"></a>
+</p>
+
+<h2 align="center">This Fork</h2>
+
+<p align="center">
+  A personal fork of <a href="https://github.com/quillpad/quillpad">quillpad/quillpad</a>
+  focused on using Quillpad as a direct Markdown notes app for a folder inside an
+  Obsidian vault. Versions follow <code>upstream+fork.N</code>
+  (current: <b>1.5.14+fork.1</b>).
+</p>
+
+- **The folder is the source of truth** — notes are read from and written directly to
+  `.md`/`.txt` files in the folder you choose.
+- **External changes are respected** — files moved, renamed or deleted by another app
+  are followed or removed on the next sync; notes are never resurrected or duplicated.
+- **Safe by default** — file edits win on conflicts, ambiguous files are left alone,
+  unsaved local edits are preserved if their file disappears, and an empty/unavailable
+  folder never triggers a mass deletion.
+- **Recursive and Obsidian-friendly** — nested folders work; hidden folders, `.trash`
+  and `sync-conflict` files are ignored.
+- **Explicit recovery** — failed writes are retried, and Settings → Syncing →
+  File Storage has a confirmed **Rescan folder** action.
+
+<p align="center">
+  <a href="https://github.com/willl03/quillpad/releases/latest">
+    <img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png?raw=true" alt="Download from GitHub" height="75">
+  </a>
+</p>
+
+> **Note:** builds are signed with a personal key — install over any previous build of
+> this fork (not over upstream's F-Droid/Play builds).
+
+*Everything below this notice is the upstream readme.*
+
 [![Gitter](https://badges.gitter.im/quillpad/community.svg)](https://gitter.im/quillpad/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![Android Build Release](https://github.com/quillpad/quillpad/actions/workflows/android.yml/badge.svg?branch=master)](https://github.com/quillpad/quillpad/actions/workflows/android.yml)
 # Quillpad
